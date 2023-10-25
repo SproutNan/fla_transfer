@@ -134,7 +134,7 @@ function extractAnimationData() {
 		var bone = {
 			"name": layer.name,
 			"parent": "",
-			"dI": (element ? 0 : -1),
+			"dI": 0,
 			"x": (element ? element.x : 0.0),
 			"y": (element ? -element.y : 0.0),
 			"z": tl_layerCount - j,
@@ -259,42 +259,50 @@ function extractAnimationData() {
 				var _isEmpty = (curr_frame.elements.length ? false : true);
 				var new_frame = {
                   "dI": (_isEmpty ? -1 : 0),
-                  "x": (_isEmpty ? 0 : curr_frame.elements[0].x),
-                  "y": (_isEmpty ? 0 : -curr_frame.elements[0].y),
+                  "x": 0,
+                  "y": 0,
                   "z": 0,
-                  "cX": (_isEmpty ? 1.0 : curr_frame.elements[0].scaleX),
-                  "cY": (_isEmpty ? 1.0 : curr_frame.elements[0].scaleY),
-                  "kX": (_isEmpty ? 0.0 : curr_frame.elements[0].skewX * 3.1415926 / 180),
-                  "kY": (_isEmpty ? 0.0 : - curr_frame.elements[0].skewY * 3.1415926 / 180),
+                  "cX": 1.0,
+                  "cY": 1.0,
+                  "kX": 0,
+                  "kY": 0,
                   "fi": curr_anim_frame - curr_anim_start_frame,
                   "twE": 0,
                   "tweenFrame": true,
                   "bd_src": 1,
                   "bd_dst": 771
 				}
-				// 确定当前帧是不是这个动画的第一帧
-				var curr_anim_curr_layer = file.animation_data[0].mov_data[curr_anim_index].mov_bone_data[_layer - 1];
-				if (curr_anim_curr_layer.frame_data.length != 0) {
-					new_frame.x -= curr_anim_curr_layer.frame_data[0].x;
-					new_frame.y -= curr_anim_curr_layer.frame_data[0].y;
-					new_frame.cX = curr_anim_curr_layer.frame_data[0].cX - new_frame.cX;
-					new_frame.cY = curr_anim_curr_layer.frame_data[0].cY - new_frame.cY;
-					new_frame.kX -= curr_anim_curr_layer.frame_data[0].kX;
-					new_frame.kY -= curr_anim_curr_layer.frame_data[0].kY;
-				}
-				else {
-					new_frame.x -= file.armature_data[0].bone_data[_layer - 1].x;
-					new_frame.y -= file.armature_data[0].bone_data[_layer - 1].y;
-					new_frame.cX /= file.armature_data[0].bone_data[_layer - 1].cX;
-					new_frame.cY /= file.armature_data[0].bone_data[_layer - 1].cY;
-					new_frame.kX -= file.armature_data[0].bone_data[_layer - 1].kX;
-					new_frame.kY -= file.armature_data[0].bone_data[_layer - 1].kY;
+				// 确定当前帧是不是第一个动画的第一帧
+				// 跨动画的关键帧也用的是第一个动画的，所以
+				var first_anim_first_frame = file.animation_data[0].mov_data[0].mov_bone_data[_layer - 1];
+				// 第一个动画已经有关键帧了
+				if (!_isEmpty && first_anim_first_frame.frame_data.length != 0) {
+					new_frame.x = curr_frame.elements[0].x - file.armature_data[0].bone_data[_layer - 1].x;
+					new_frame.y = -curr_frame.elements[0].y - file.armature_data[0].bone_data[_layer - 1].y;
+					new_frame.cX = curr_frame.elements[0].scaleX - (file.armature_data[0].bone_data[_layer - 1].cX - first_anim_first_frame.frame_data[0].cX);
+					new_frame.cY = curr_frame.elements[0].scaleY - (file.armature_data[0].bone_data[_layer - 1].cY - first_anim_first_frame.frame_data[0].cY);
+					new_frame.kX = curr_frame.elements[0].skewX * 3.1415926 / 180 - (file.armature_data[0].bone_data[_layer - 1].kX - first_anim_first_frame.frame_data[0].kX);
+					new_frame.kY = -curr_frame.elements[0].skewY * 3.1415926 / 180 - (file.armature_data[0].bone_data[_layer - 1].kY - first_anim_first_frame.frame_data[0].kY);
+					var _a = parseInt(curr_frame.elements[0].colorAlphaPercent * 2.55, 10);
+					var _r = curr_frame.elements[0].colorRedAmount;
+					var _g = curr_frame.elements[0].colorGreenAmount;
+					var _b = curr_frame.elements[0].colorBlueAmount;
+					if (_a < 254 || _r != 0 || _g != 0 || _b != 0) {
+						new_frame["color"] = {
+							a: 255,
+							r: 255,
+							g: 255,
+							b: 255
+						}
+						new_frame.color.a = (_a < 254 ? _a : 255);
+						new_frame.color.r = _r;
+						new_frame.color.g = _g;
+						new_frame.color.b = _b;
+					}
 				}
 				// 确定display_Index
 				
 				if (!_isEmpty && _layer == 1) {
-					fl.trace("scale X" + curr_frame.elements[0].scaleX)
-					fl.trace("scale Y" + curr_frame.elements[0].scaleY)
 					var displaydata = file.armature_data[0].bone_data[_layer - 1].display_data;
 					// 当前图层当前帧当前元件的display_data
 					var bitmap_name = curr_frame.elements[0].libraryItem.timeline.layers[0].frames[0].elements[0].libraryItem.name;
