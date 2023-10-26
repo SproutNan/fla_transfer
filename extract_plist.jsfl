@@ -318,6 +318,24 @@ function extractAnimationData() {
 		}
 	}
 	
+	// 4. 获取 texture_data
+	var instances = doc.library.items.filter(function (item) {
+		return item.itemType == "movie clip" && item.name[0] != "元";
+	});
+
+	for (var i = 0; i < instances.length; i++) {
+		var instance = instances[i];
+		var new_texture = {
+			"name": instance.name,
+			"width": instance.timeline.layers[0].frames[0].elements[0].width,
+			"height": instance.timeline.layers[0].frames[0].elements[0].height,
+			"pX": 0.0,
+			"pY": 1.0,
+			"plistFile": ""
+		}
+		file.texture_data.push(new_texture);
+	}
+	
 	var js = simpleJSONStringify(file);
     fl.trace(js);
 
