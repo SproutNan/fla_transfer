@@ -2,18 +2,15 @@ from PIL import Image
 import os
 from sys import argv
 
-# Usage: python generate_plist.py [image_path] [fla_name]
+# Usage: python generate_plist.py [fla_name] [fla_dir_path]
 
 if __name__ == "__main__":
     # Folder containing exported images
-    script_folder = os.path.dirname(os.path.realpath(__file__))
-    img_folder = os.path.join(script_folder, argv[1])
-    export_folder = os.path.join(script_folder, "Export")
-    if not os.path.exists(export_folder):
-        os.mkdir(export_folder)
-    sheet_name = argv[2] + '.png'
+    img_folder = os.path.join(argv[2], argv[1] + '\\Resources')
+    export_folder = os.path.join(argv[2], argv[1] + "\\Export")
+    sheet_name = argv[1] + '0.png'
     output_spritesheet = os.path.join(export_folder, sheet_name)
-    output_plist = os.path.join(export_folder, argv[2] + '.plist')
+    output_plist = os.path.join(export_folder, argv[1] + '0.plist')
 
     images = [Image.open(os.path.join(img_folder, f)) for f in os.listdir(img_folder) if f.endswith('.png')]
     widths, heights = zip(*(i.size for i in images))
@@ -80,8 +77,3 @@ if __name__ == "__main__":
         f.write('    </dict>\n')
         f.write('</dict>\n')
         f.write('</plist>')
-
-    # remove directory: img_folder
-    for f in os.listdir(img_folder):
-        os.remove(os.path.join(img_folder, f))
-    os.rmdir(img_folder)

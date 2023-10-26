@@ -30,8 +30,7 @@
     return result;
 }
 
-function main() {
-	fl.trace("///// Start extract_plist.jsfl /////");
+function extractPlist() {
 	// Check if a document is open
 	var doc = fl.getDocumentDOM();
 	if (!doc) {
@@ -41,20 +40,13 @@ function main() {
 
 	// Get the directory of the current FLA file and append 'imageLibrary' to it
 	var flaFullPath = doc.path;
-	fl.trace("[debug] flaFullPath: " + flaFullPath);
 	var lastSlashIndex = flaFullPath.lastIndexOf('\\');
 	var flaDirectory = flaFullPath.substr(0, lastSlashIndex);
 	var flaName = (doc.name.substr(-4) === ".fla") ? doc.name.substr(0, doc.name.length - 4) : doc.name;
-	var exportFolder = flaDirectory + "\\imageLibrary_" + flaName;
-	fl.trace("[debug] exportFolder: " + exportFolder);
+	
+	var exportFolder = flaDirectory + "\\" + flaName + "\\" + "Resources";
 
 	var exportFolderURI = FLfile.platformPathToURI(exportFolder);
-	if (!FLfile.exists(exportFolder)) {
-		FLfile.createFolder(exportFolderURI);
-		fl.trace("[debug] Created folder: " + exportFolder);
-	} else {
-		fl.trace("[debug] Export folder already exists: " + exportFolder);
-	}
 
 	var bitmaps = doc.library.items.filter(function (item) {
 		return item.itemType == "bitmap";
@@ -65,27 +57,17 @@ function main() {
 		var bitmapName = (bitmap.name.substr(-4) === ".png") ? bitmap.name : bitmap.name + ".png";
 		var exportPath = exportFolderURI + "/" + bitmapName;
 		bitmap.exportToFile(exportPath);
-		fl.trace("[debug] Exported bitmap: " + bitmapName);
 	}
-
-	fl.trace("[debug] Exported all bitmaps to: " + exportFolder);
-	fl.trace("[debug] Start generating plist file")
 
 	// Run python script
-	var pythonScriptPath = "generate_plist.py";
-	var status = fl.trace("python " + flaDirectory + pythonScriptPath + " imageLibrary_" + flaName + " " + flaName);
-	if (status != 0) {
-		fl.trace("[debug] Failed to run python script");
-	} else {
-		fl.trace("[debug] Successfully generated plist file");
-	}
-	fl.trace("///// End extract_plist.jsfl /////");
+	var pythonScriptPath = "\\generate_plist.py";
+	FLfile.runCommandLine("python " + flaDirectory + pythonScriptPath + " " + flaName + " " + flaDirectory);
 }
 
-function extractAnimationData() {
+function extractAnimationData(export_status) {
 	var doc = fl.getDocumentDOM();
 	if (!doc) {
-		fl.trace("没有打开的文档");
+		fl.trace("No document open");
 		return;
 	}
 
@@ -104,7 +86,6 @@ function extractAnimationData() {
 		fl.trace("fail: mainElement is not an instance");
 	}
 
-	fl.trace("/// new chance")
 	var file = {
 		"content_scale": 1.0,
 		"armature_data": [{
@@ -157,14 +138,13 @@ function extractAnimationData() {
 				var element_name = bit_element.libraryItem.name;
 				if (!used_map.hasOwnProperty(element_name)) {
 					used_map[element_name] = true;
-					fl.trace(element_name);
 					var bitmap = {
 						"name": element_name,
 						"displayType": 0,
 						"skin_data": [
 							{
-								"x": bit_element.x,
-								"y": bit_element.y,
+								"x": 0,
+								"y": 0,
 								"cX": bit_element.scaleX,
 								"cY": bit_element.scaleY,
 								"kX": bit_element.skewX * 3.1415926 / 180,
@@ -193,7 +173,6 @@ function extractAnimationData() {
 		}
 	}
 	animations.push([tl_dr, "null"]);
-	fl.trace(animations);
 	
 
 	// 一共有多少个图层？
@@ -204,7 +183,7 @@ function extractAnimationData() {
 	for (var i = 0; i < animations.length - 1; i++) {
 	    var new_animation = {
 			"name": animations[i][1],
-			"dr": animations[i + 1][0] - _last,
+			"dr": animations[i + 1][0] - _last - 1,
 			"lp": true,
 			"to": 0,
 			"drTW": 0,
@@ -229,7 +208,6 @@ function extractAnimationData() {
 	
 	// 最后一帧之后的的哨兵是第几帧？
 	var last_anim_frame = animations[animations.length - 1][0];
-	fl.trace(last_anim_frame);
 	// 下一个要分析的动画是从第几帧开始
 	var next_anim_start_frame = 0;
 	// 现在这个动画是从第几针开始
@@ -253,14 +231,13 @@ function extractAnimationData() {
 		}
 		// 现在，遍历这帧的所有 layers
 		for (var _layer = 1; _layer < tl_lys; _layer++) {
-			// 关键帧的 duration > 0
 			var curr_frame = mainElement.libraryItem.timeline.layers[_layer].frames[curr_anim_frame];
 			if (curr_frame.startFrame == curr_anim_frame) {
 				var _isEmpty = (curr_frame.elements.length ? false : true);
 				var new_frame = {
                   "dI": (_isEmpty ? -1 : 0),
-                  "x": 0,
-                  "y": 0,
+                  "x": (_isEmpty ? -file.armature_data[0].bone_data[_layer - 1].x : 0),
+                  "y": (_isEmpty ? -file.armature_data[0].bone_data[_layer - 1].y : 0),
                   "z": 0,
                   "cX": 1.0,
                   "cY": 1.0,
@@ -271,6 +248,26 @@ function extractAnimationData() {
                   "tweenFrame": true,
                   "bd_src": 1,
                   "bd_dst": 771
+				}
+				// 加入帧事件
+				if (curr_frame.name.length > 0) {
+					new_frame["evt"] = curr_frame.name;
+				}
+				else if (mainElement.libraryItem.timeline.layers[_layer].name == "_ground" && !_isEmpty) {
+					var duration = mainElement.libraryItem.timeline.layers[_layer].frames[curr_anim_frame].duration;
+					// 下一个 ground 的位置
+					var next_ground_index = curr_anim_frame + duration;
+					if (next_ground_index < next_anim_start_frame) {
+						var next_frame = mainElement.libraryItem.timeline.layers[_layer].frames[next_ground_index];
+						var delta_x = (next_frame.elements[0].x - curr_frame.elements[0].x) * 1000;
+						var speed = "SETGS_" + (delta_x / duration);
+						var lastPeriod = speed.lastIndexOf('.');
+						// round speed
+						if (lastPeriod != -1) {
+							var speed = speed.substr(0, lastPeriod);
+						}
+						new_frame["evt"] = speed;
+					}
 				}
 				// 确定当前帧是不是第一个动画的第一帧
 				// 跨动画的关键帧也用的是第一个动画的，所以
@@ -287,6 +284,9 @@ function extractAnimationData() {
 					var _r = curr_frame.elements[0].colorRedAmount;
 					var _g = curr_frame.elements[0].colorGreenAmount;
 					var _b = curr_frame.elements[0].colorBlueAmount;
+					if (mainElement.libraryItem.timeline.layers[_layer].name == "_ground") {
+						_a = 0;
+					}
 					if (_a < 254 || _r != 0 || _g != 0 || _b != 0) {
 						new_frame["color"] = {
 							a: 255,
@@ -318,28 +318,124 @@ function extractAnimationData() {
 		}
 	}
 	
+	// 把动画中没有帧的图层删了
+	for (var k = 0; k < file.animation_data.length; k++) {
+		for (var g = 0; g < file.animation_data[k].mov_data.length; g++) {
+			file.animation_data[k].mov_data[g].mov_bone_data = file.animation_data[k].mov_data[g].mov_bone_data.filter(function(item) {
+				return item.frame_data.length != 0;
+			});
+		}
+	}
+	
 	// 4. 获取 texture_data
 	var instances = doc.library.items.filter(function (item) {
 		return item.itemType == "movie clip" && item.name[0] != "元";
 	});
 
+	var _used_bitmap = {};
 	for (var i = 0; i < instances.length; i++) {
 		var instance = instances[i];
-		var new_texture = {
-			"name": instance.name,
-			"width": instance.timeline.layers[0].frames[0].elements[0].width,
-			"height": instance.timeline.layers[0].frames[0].elements[0].height,
-			"pX": 0.0,
-			"pY": 1.0,
-			"plistFile": ""
+		if (instance.timeline.layers[0].frames[0].elements[0].libraryItem.itemType == "bitmap") {
+			var instance_bitmap_name = instance.timeline.layers[0].frames[0].elements[0].libraryItem.name;
+			instance_bitmap_name = (instance_bitmap_name.substr(-4) === ".png") ? instance_bitmap_name.substr(0, instance_bitmap_name.length - 4) : instance_bitmap_name;
+			if (!(instance_bitmap_name in _used_bitmap)) {
+				_used_bitmap[instance_bitmap_name] = true;
+				var new_texture = {
+					"name": instance_bitmap_name,
+					"width": instance.timeline.layers[0].frames[0].elements[0].width,
+					"height": instance.timeline.layers[0].frames[0].elements[0].height,
+					"pX": 0.0,
+					"pY": 1.0,
+					"plistFile": ""
+				}
+				file.texture_data.push(new_texture);
+			}
 		}
-		file.texture_data.push(new_texture);
 	}
 	
-	var js = simpleJSONStringify(file);
-    fl.trace(js);
+	// 5. 填写path
+	if (export_status) {
+		file.config_file_path = fla_name + "0.plist";
+		file.config_png_path = fla_name + "0.png";
+	}
+	
+	return simpleJSONStringify(file);
 
+	// 获取当前FLA的路径
+	var currentPath = fl.getDocumentDOM().path;
 
+	// 转换路径为URI格式
+	var fileURI = "file:///" + currentPath.replace(/\\/g, '/') + "output.json";
+
+	// 使用FLfile进行文件操作
+	if (FLfile.exists(fileURI)) {
+	    FLfile.remove(fileURI);
+	}
+
+	FLfile.write(fileURI, js);
 }
 
-extractAnimationData();
+function rulerXml(flaName) {
+	var a = '<?xml version="1.0" encoding="utf-8"?>\n<ArrayOfGuidesProject xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">\n  <GuidesProject>\n    <Project>';
+	a += flaName;
+	a += "</Project>\n    <GuidesList />\n  </GuidesProject>\n</ArrayOfGuidesProject>";
+	return a;
+}
+
+function xmlAnimation(flaDirPath, flaName) {
+	var a = '<?xml version="1.0"?>\n<AnimationProject xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">\n  <ProjectDir>';
+	a += flaDirPath;
+	a += '</ProjectDir>\n  <Version>1.6.0.0</Version>\n  <Resources>';
+	a += flaDirPath + '\\Resources';
+	a += '</Resources>\n  <Name>';
+	a += flaName;
+	a += '</Name>\n  <JsonFileName>';
+	a += flaName + '.json';
+	a += '</JsonFileName>\n  <JsonFolder>';
+	a += flaDirPath + '\\Json';
+	a += '</JsonFolder>\n  <JsonList />\n  <CanvasSize>\n    <Width>0</Width>\n    <Height>0</Height>\n  </CanvasSize>\n  <filePath>';
+	a += flaDirPath + '\\' + flaName + '.xml.animation';
+	a += '</filePath>\n  <ProjectType>AnimationProject</ProjectType>\n  <ResRelativePath />\n  <ResourceFileList />\n  <bBatchImage>false</bBatchImage>\n</AnimationProject>';
+	return a;
+}
+
+function build() {
+	var doc = fl.getDocumentDOM();
+	// 在 fla 的文件夹下创建与 fla 名同名的文件夹，然后注入文件夹结构
+	var flaFullPath = doc.path;
+	var targetExportPath = (doc.path.substr(-4) === ".fla") ? doc.path.substr(0, doc.path.length - 4) : doc.path;
+	var flaName = (doc.name.substr(-4) === ".fla") ? doc.name.substr(0, doc.name.length - 4) : doc.name;
+	
+	var lastSlashIndex = flaFullPath.lastIndexOf('\\');
+	var flaDirectory = flaFullPath.substr(0, lastSlashIndex) + flaName;
+	
+	var exportFolderURI = FLfile.platformPathToURI(targetExportPath);
+	
+	if (!FLfile.exists(exportFolderURI)) {
+		FLfile.createFolder(exportFolderURI);
+		fl.trace("[debug] Created folder: " + exportFolderURI);
+	} else {
+		fl.trace("[debug] Export folder already exists: " + exportFolderURI);
+		fl.trace("[fatal] Please be sure that no folder's name is the same as the fla.");
+		return;
+	}
+	FLfile.createFolder(exportFolderURI + '/Export');
+	FLfile.createFolder(exportFolderURI + '/Json');
+	FLfile.createFolder(exportFolderURI + '/Resources');
+	FLfile.createFolder(exportFolderURI + '/Ruler');
+	
+	
+	var json = extractAnimationData(false);
+	var exportJson = extractAnimationData(true);
+	FLfile.write(exportFolderURI + '/Json/' + flaName + ".json", json);
+	FLfile.write(exportFolderURI + '/Export/' + flaName + ".ExportJson", exportJson);
+	var rulerX = rulerXml(flaName);
+	FLfile.write(exportFolderURI + '/Ruler/' + flaName + ".xml", rulerX);
+	var xmlA = xmlAnimation(flaDirectory, flaName);
+	FLfile.write(exportFolderURI + '/' + flaName + ".xml.animation", xmlA);
+	
+	extractPlist();
+	fl.trace("[messg] Success!")
+}
+
+build();
